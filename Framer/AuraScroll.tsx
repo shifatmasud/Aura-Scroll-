@@ -192,6 +192,11 @@ const useGsapAnimations = (
 ) => {
 
     useLayoutEffect(() => {
+        // Use refs for state that must persist across observer creation/destruction
+        // without causing re-renders. This fixes stale closure issues.
+        const currentIndexRef = useRef(0);
+        const animatingRef = useRef(false);
+
         let ctx: any;
         let observer: any = null;
 
@@ -238,13 +243,11 @@ const useGsapAnimations = (
                 // Animate in the page indicator
                 gsap.to(pageIndicatorHandles.rootRef.current, { autoAlpha: 1, y: 0, duration: 1, ease: "power2.out" });
 
-                let currentIndex = 0;
-                let animating = false;
-
                 const gotoSection = (index: number, direction: number) => {
-                    animating = true;
+                    animatingRef.current = true;
                     let fromTop = direction === -1;
                     let dFactor = fromTop ? -1 : 1;
+                    const currentIdx = currentIndexRef.current;
 
                     const nextNumber = index + 1;
                     const nextTens = Math.floor(nextNumber / 10);
@@ -252,14 +255,14 @@ const useGsapAnimations = (
                     
                     const tl = gsap.timeline({
                         defaults: { duration: transitions.duration, ease: transitions.ease },
-                        onComplete: () => { animating = false; }
+                        onComplete: () => { animatingRef.current = false; }
                     });
 
-                    if (currentIndex >= 0 && splitHeadings[currentIndex]) {
-                        gsap.set(sectionsDom[currentIndex], { zIndex: 0 });
+                    if (currentIdx >= 0 && splitHeadings[currentIdx]) {
+                        gsap.set(sectionsDom[currentIdx], { zIndex: 0 });
                         
-                        tl.to(splitHeadings[currentIndex].chars, { autoAlpha: 0, yPercent: -150 * dFactor, duration: 0.8, ease: "power2.in", stagger: { each: transitions.textStagger, from: "random" }}, 0);
-                        tl.to(imagesDom[currentIndex], { yPercent: -30 * dFactor, filter: `blur(${transitions.blurAmount}px)`}, 0).set(sectionsDom[currentIndex], { autoAlpha: 0 });
+                        tl.to(splitHeadings[currentIdx].chars, { autoAlpha: 0, yPercent: -150 * dFactor, duration: 0.8, ease: "power2.in", stagger: { each: transitions.textStagger, from: "random" }}, 0);
+                        tl.to(imagesDom[currentIdx], { yPercent: -30 * dFactor, filter: `blur(${transitions.blurAmount}px)`}, 0).set(sectionsDom[currentIdx], { autoAlpha: 0 });
                     }
 
                     gsap.set(sectionsDom[index], { autoAlpha: 1, zIndex: 1 });
@@ -274,7 +277,7 @@ const useGsapAnimations = (
                     tl.to(pageIndicatorHandles.tensRef.current, { y: -nextTens * digitHeight, duration: 1, ease: "power2" }, 0.2);
                     tl.to(pageIndicatorHandles.unitsRef.current, { y: -nextUnits * digitHeight, duration: 1, ease: "power2" }, 0.2);
 
-                    currentIndex = index;
+                    currentIndexRef.current = index;
                 }
                 
                 const killObserver = () => {
@@ -285,36 +288,34 @@ const useGsapAnimations = (
                 };
                 
                 const createObserver = () => {
-                    if (observer) return; // Don't create duplicates
+                    if (observer) return;
                     
                     observer = Observer.create({
                         target: mainRef.current,
                         type: "wheel,touch,pointer",
                         wheelSpeed: -1,
                         onDown: () => { // Scroll Up
-                            if (animating) return;
-                            const newIndex = currentIndex - 1;
+                            if (animatingRef.current) return;
+                            const newIndex = currentIndexRef.current - 1;
                             if (transitions.infiniteScroll) {
                                 gotoSection(gsap.utils.wrap(0, sections.length, newIndex), -1);
                             } else {
                                 if (newIndex >= 0) {
                                     gotoSection(newIndex, -1);
                                 } else {
-                                    // At the top, release native scroll
                                     killObserver();
                                 }
                             }
                         },
                         onUp: () => { // Scroll Down
-                            if (animating) return;
-                            const newIndex = currentIndex + 1;
+                            if (animatingRef.current) return;
+                            const newIndex = currentIndexRef.current + 1;
                             if (transitions.infiniteScroll) {
                                 gotoSection(gsap.utils.wrap(0, sections.length, newIndex), 1);
                             } else {
                                 if (newIndex < sections.length) {
                                     gotoSection(newIndex, 1);
                                 } else {
-                                    // At the bottom, release native scroll
                                     killObserver();
                                 }
                             }
@@ -327,12 +328,10 @@ const useGsapAnimations = (
                 if (transitions.infiniteScroll) {
                     createObserver();
                 } else {
-                    // For finite scroll, use a window scroll listener to re-engage the observer.
                     const handleScroll = () => {
-                        if (!mainRef.current || observer) return; // Don't act if observer is already active
+                        if (!mainRef.current || observer) return;
                         
                         const rect = mainRef.current.getBoundingClientRect();
-                        // Activate when the component is mostly centered in the viewport
                         const isCentered = rect.top < window.innerHeight / 2 && rect.bottom > window.innerHeight / 2;
 
                         if (isCentered) {
@@ -341,10 +340,8 @@ const useGsapAnimations = (
                     };
                     
                     window.addEventListener('scroll', handleScroll, { passive: true });
-                    // Initial check in case it's already in view
                     handleScroll();
                     
-                    // The main cleanup function for the effect will handle listener removal
                     const cleanup = () => {
                         window.removeEventListener('scroll', handleScroll);
                         killObserver();
@@ -622,7 +619,7 @@ AuraScroll.defaultProps = {
     sections: [
         { id: 1, title: 'Aura Scape', backgroundImage: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=2070&auto.format&fit=crop" },
         { id: 2, title: 'Serene Waters', backgroundImage: "https://images.unsplash.com/photo-1501785888041-af3ef285b470?q=80&w=2070&auto.format&fit=crop" },
-        { id: 3, title: 'Mountain Pass', backgroundImage: "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?q=80&w=2070&auto.format&fit=crop" },
+        { id: 3, title: 'Mountain Pass', backgroundImage: "https://images.unsplash.com/photo-1470770841_072-f978cf4d019e?q=80&w=2070&auto.format&fit=crop" },
     ],
     transitions: {
         duration: 1.25,
