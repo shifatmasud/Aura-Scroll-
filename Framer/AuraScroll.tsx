@@ -193,7 +193,7 @@ const useGsapAnimations = (
 
     useLayoutEffect(() => {
         let ctx: any;
-        let observer: any;
+        let observer: any = null;
 
         const init = () => {
             if (typeof gsap === 'undefined' || typeof Observer === 'undefined' || typeof SplitText === 'undefined') {
@@ -218,7 +218,7 @@ const useGsapAnimations = (
 
                 // Common initial setup
                 gsap.set(outerWrappersDom, { yPercent: 100 });
-                gsap.set(innerWrappersDom, { yPercent: -100 });
+                gsap.set(innerWrapperRefs, { yPercent: -100 });
                 gsap.set(pageIndicatorHandles.rootRef.current, {autoAlpha: 0, y: -30});
 
                 gsap.set(sectionsDom[0], { autoAlpha: 1, zIndex: 1 });
@@ -276,40 +276,81 @@ const useGsapAnimations = (
 
                     currentIndex = index;
                 }
-
-                observer = Observer.create({
-                    target: mainRef.current,
-                    type: "wheel,touch,pointer",
-                    wheelSpeed: -1,
-                    onDown: () => { // Scroll Up
-                        if (animating) return;
-                        let newIndex = currentIndex - 1;
-                        if (transitions.infiniteScroll) {
-                            newIndex = gsap.utils.wrap(0, sectionsDom.length, newIndex);
-                            gotoSection(newIndex, -1);
-                        } else if (newIndex >= 0) {
-                            gotoSection(newIndex, -1);
-                        }
-                    },
-                    onUp: () => { // Scroll Down
-                        if (animating) return;
-                        let newIndex = currentIndex + 1;
-                        if (transitions.infiniteScroll) {
-                            newIndex = gsap.utils.wrap(0, sectionsDom.length, newIndex);
-                            gotoSection(newIndex, 1);
-                        } else if (newIndex < sectionsDom.length) {
-                            gotoSection(newIndex, 1);
-                        } else {
-                            // End of the line for finite scroll, kill observer to release scroll.
-                            if (observer) {
-                                observer.kill();
-                                observer = null;
+                
+                const killObserver = () => {
+                    if (observer) {
+                        observer.kill();
+                        observer = null;
+                    }
+                };
+                
+                const createObserver = () => {
+                    if (observer) return; // Don't create duplicates
+                    
+                    observer = Observer.create({
+                        target: mainRef.current,
+                        type: "wheel,touch,pointer",
+                        wheelSpeed: -1,
+                        onDown: () => { // Scroll Up
+                            if (animating) return;
+                            const newIndex = currentIndex - 1;
+                            if (transitions.infiniteScroll) {
+                                gotoSection(gsap.utils.wrap(0, sections.length, newIndex), -1);
+                            } else {
+                                if (newIndex >= 0) {
+                                    gotoSection(newIndex, -1);
+                                } else {
+                                    // At the top, release native scroll
+                                    killObserver();
+                                }
                             }
+                        },
+                        onUp: () => { // Scroll Down
+                            if (animating) return;
+                            const newIndex = currentIndex + 1;
+                            if (transitions.infiniteScroll) {
+                                gotoSection(gsap.utils.wrap(0, sections.length, newIndex), 1);
+                            } else {
+                                if (newIndex < sections.length) {
+                                    gotoSection(newIndex, 1);
+                                } else {
+                                    // At the bottom, release native scroll
+                                    killObserver();
+                                }
+                            }
+                        },
+                        tolerance: 10,
+                        preventDefault: true
+                    });
+                };
+                
+                if (transitions.infiniteScroll) {
+                    createObserver();
+                } else {
+                    // For finite scroll, use a window scroll listener to re-engage the observer.
+                    const handleScroll = () => {
+                        if (!mainRef.current || observer) return; // Don't act if observer is already active
+                        
+                        const rect = mainRef.current.getBoundingClientRect();
+                        // Activate when the component is mostly centered in the viewport
+                        const isCentered = rect.top < window.innerHeight / 2 && rect.bottom > window.innerHeight / 2;
+
+                        if (isCentered) {
+                            createObserver();
                         }
-                    },
-                    tolerance: 10,
-                    preventDefault: true
-                });
+                    };
+                    
+                    window.addEventListener('scroll', handleScroll, { passive: true });
+                    // Initial check in case it's already in view
+                    handleScroll();
+                    
+                    // The main cleanup function for the effect will handle listener removal
+                    const cleanup = () => {
+                        window.removeEventListener('scroll', handleScroll);
+                        killObserver();
+                    };
+                    return cleanup;
+                }
 
             }, mainRef);
         };
@@ -579,9 +620,9 @@ AuraScroll.defaultProps = {
     width: "100%",
     height: "100%",
     sections: [
-        { id: 1, title: 'Aura Scape', backgroundImage: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=2070&auto=format&fit=crop" },
-        { id: 2, title: 'Serene Waters', backgroundImage: "https://images.unsplash.com/photo-1501785888041-af3ef285b470?q=80&w=2070&auto=format&fit=crop" },
-        { id: 3, title: 'Mountain Pass', backgroundImage: "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?q=80&w=2070&auto=format&fit=crop" },
+        { id: 1, title: 'Aura Scape', backgroundImage: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=2070&auto.format&fit=crop" },
+        { id: 2, title: 'Serene Waters', backgroundImage: "https://images.unsplash.com/photo-1501785888041-af3ef285b470?q=80&w=2070&auto.format&fit=crop" },
+        { id: 3, title: 'Mountain Pass', backgroundImage: "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?q=80&w=2070&auto.format&fit=crop" },
     ],
     transitions: {
         duration: 1.25,
