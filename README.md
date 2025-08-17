@@ -44,7 +44,7 @@ We have a few different versions of this app to make it easy to use in different
     *   `config.ts`: This is the **master control panel** for the app. You can change almost anything here—text, images, animation speed, blur effects, etc.—without touching the main code.
 
 *   `Framer/`: This is the **"Framer Component" Version**.
-    *   It's a special, self-contained package designed to be dropped right into a design and prototyping tool called Framer. It includes everything it needs to work, all in one file. Think of it like a portable toy that you can bring to any playground.
+    *   `AuraScroll.tsx`: This is a special, self-contained package designed to be dropped right into a design and prototyping tool called [Framer](https://framer.com). It includes everything it needs to work, all in one file. Think of it like a portable, super-powered toy that you can bring to any playground and customize on the fly. You can control sections, transitions, and UI elements from the properties panel in Framer.
 
 ---
 
