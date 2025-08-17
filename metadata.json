@@ -1,0 +1,5 @@
+{
+  "name": "GSAP Scrolling Sections",
+  "description": "A visually stunning single-page application that demonstrates full-page scrolling animations using GSAP (GreenSock Animation Platform) and React. Users can navigate through sections with their mouse wheel or touch gestures.",
+  "requestFramePermissions": []
+}
