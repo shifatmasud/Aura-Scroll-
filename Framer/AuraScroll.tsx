@@ -35,6 +35,7 @@ interface SectionData {
     title: string
     backgroundImage: string
     backgroundPosition?: string
+    url?: string
 }
 
 interface PageIndicatorHandles {
@@ -61,6 +62,8 @@ interface AuraScrollProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'ch
         indicatorFont: object
         headingFont: object
         digitHeight: number
+        headingAlignment: "left" | "center" | "right"
+        disableTextSelection: boolean
     }
     width: number,
     height: number
@@ -82,13 +85,14 @@ const useGsapAnimations = (
     const outerWrapperRefs = useRef<(HTMLDivElement | null)[]>([]);
     const innerWrapperRefs = useRef<(HTMLDivElement | null)[]>([]);
     const pageIndicatorRef = useRef<PageIndicatorHandles>(null);
-
+    
     // Use refs for all mutable state to prevent stale closures in GSAP callbacks.
     const currentIndexRef = useRef(0);
     const animatingRef = useRef(false);
     const observerRef = useRef<any>(null);
     const splitHeadingsRef = useRef<any[]>([]);
     const isSnappingRef = useRef(false);
+    const prevSectionsLengthRef = useRef(sections.length);
 
 
     useLayoutEffect(() => {
@@ -96,6 +100,12 @@ const useGsapAnimations = (
 
         const sectionsDom = sectionRefs.current.filter(Boolean) as HTMLElement[];
         if (sectionsDom.length === 0) return;
+        
+        // If the number of sections changes, reset to the first slide.
+        if (prevSectionsLengthRef.current !== sections.length) {
+            currentIndexRef.current = 0;
+            prevSectionsLengthRef.current = sections.length;
+        }
         
         let intersectionObserver: IntersectionObserver | undefined;
 
@@ -106,26 +116,40 @@ const useGsapAnimations = (
             const innerWrappersDom = innerWrapperRefs.current.filter(Boolean) as HTMLDivElement[];
             const imagesDom = imageRefs.current.filter(Boolean) as HTMLDivElement[];
             
-            // Initial scene setup
+            const activeIndex = currentIndexRef.current;
+            animatingRef.current = false;
+
+            // Scene setup for all sections
             gsap.set(outerWrappersDom, { yPercent: 100 });
             gsap.set(innerWrappersDom, { yPercent: -100 });
-            gsap.set(pageIndicatorRef.current?.rootRef.current, {autoAlpha: 0, y: -30});
             gsap.set(sectionsDom, { autoAlpha: 0 });
 
-            // Setup first section
-            currentIndexRef.current = 0;
-            animatingRef.current = false;
-            gsap.set(sectionsDom[0], { autoAlpha: 1, zIndex: 1 });
-            gsap.set([outerWrappersDom[0], innerWrappersDom[0]], { yPercent: 0 });
-            gsap.set(imagesDom[0], { yPercent: 0 });
-            if (splitHeadingsRef.current[0]?.chars) {
-                gsap.set(splitHeadingsRef.current[0].chars, { autoAlpha: 1 });
+            // Make the currently active section visible without animation
+            if (sectionsDom[activeIndex]) {
+                gsap.set(sectionsDom[activeIndex], { autoAlpha: 1, zIndex: 1 });
+                gsap.set([outerWrappersDom[activeIndex], innerWrappersDom[activeIndex]], { yPercent: 0 });
+                gsap.set(imagesDom[activeIndex], { yPercent: 0 });
+                if (splitHeadingsRef.current[activeIndex]?.chars) {
+                    gsap.set(splitHeadingsRef.current[activeIndex].chars, { autoAlpha: 1, yPercent: 0 });
+                }
+            }
+            
+            // Set page indicator to correct number
+            const digitHeight = ui.digitHeight;
+            const currentNumber = activeIndex + 1;
+            gsap.set(pageIndicatorRef.current?.tensRef.current, { y: -Math.floor(currentNumber / 10) * digitHeight });
+            gsap.set(pageIndicatorRef.current?.unitsRef.current, { y: -(currentNumber % 10) * digitHeight });
+
+            // Set indicator visible, but only animate it in the first time
+            const indicator = pageIndicatorRef.current?.rootRef.current;
+            if (indicator) {
+                if (gsap.getProperty(indicator, "autoAlpha") === 0) {
+                    gsap.to(indicator, { autoAlpha: 1, y: 0, duration: 1, ease: "power2.out" });
+                } else {
+                    gsap.set(indicator, { autoAlpha: 1, y: 0 });
+                }
             }
 
-            const digitHeight = ui.digitHeight;
-            gsap.set(pageIndicatorRef.current?.tensRef.current, { y: 0 });
-            gsap.set(pageIndicatorRef.current?.unitsRef.current, { y: -1 * digitHeight });
-            gsap.to(pageIndicatorRef.current?.rootRef.current, { autoAlpha: 1, y: 0, duration: 1, ease: "power2.out" });
 
             const gotoSection = (index: number, direction: number) => {
                 let toIndex = index;
@@ -276,29 +300,56 @@ const PageIndicator = forwardRef<PageIndicatorHandles, { uiConfig: AuraScrollPro
 const Section: React.FC<{
     section: SectionData; index: number; uiConfig: AuraScrollProps["ui"];
     refs: { setSectionRef: (el: any, i: number) => void; setImageRef: (el: any, i: number) => void; setHeadingRef: (el: any, i: number) => void; setOuterWrapperRef: (el: any, i: number) => void; setInnerWrapperRef: (el: any, i: number) => void; }
-}> = ({ section, index, uiConfig, refs }) => (
-    <section ref={el => refs.setSectionRef(el, index)} style={{ position: "absolute", top: 0, left: 0, height: "100%", width: "100%", visibility: "hidden" }}>
+}> = ({ section, index, uiConfig, refs }) => {
+    const handleSectionClick = () => {
+        if (section.url && RenderTarget.current() !== "CANVAS") {
+            window.open(section.url, "_blank");
+        }
+    };
+    
+    const alignmentMap = {
+        left: "flex-start",
+        center: "center",
+        right: "flex-end",
+    };
+
+    const justification = alignmentMap[uiConfig.headingAlignment || "center"];
+    
+    return (
+    <section 
+        ref={el => refs.setSectionRef(el, index)} 
+        style={{ position: "absolute", top: 0, left: 0, height: "100%", width: "100%", visibility: "hidden", cursor: section.url ? "pointer" : "default" }}
+        onClick={handleSectionClick}
+    >
         <div ref={el => refs.setOuterWrapperRef(el, index)} style={{ width: "100%", height: "100%", overflowY: "hidden" }}>
             <div ref={el => refs.setInnerWrapperRef(el, index)} style={{ width: "100%", height: "100%", overflowY: "hidden" }}>
-                <div ref={el => refs.setImageRef(el, index)} style={{ display: "flex", alignItems: "center", justifyContent: "center", position: "absolute", height: "100%", width: "100%", top: 0, backgroundSize: "cover", backgroundPosition: section.backgroundPosition || 'center', backgroundImage: `linear-gradient(180deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.1) 100%), url("${section.backgroundImage}")`}}>
-                    <h2 ref={el => refs.setHeadingRef(el, index)} style={{ textAlign: "center", width: "90vw", maxWidth: "1200px", zIndex: 20, color: "white", ...uiConfig.headingFont }}>
+                <div ref={el => refs.setImageRef(el, index)} style={{ display: "flex", alignItems: "center", justifyContent: justification, position: "absolute", height: "100%", width: "100%", top: 0, backgroundSize: "cover", backgroundPosition: section.backgroundPosition || 'center', backgroundImage: `linear-gradient(180deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.1) 100%), url("${section.backgroundImage}")`}}>
+                    <h2 ref={el => refs.setHeadingRef(el, index)} style={{ textAlign: uiConfig.headingAlignment || 'center', padding: '0 5%', width: "90vw", maxWidth: "1200px", zIndex: 20, color: "white", ...uiConfig.headingFont }}>
                         {section.title}
                     </h2>
                 </div>
             </div>
         </div>
     </section>
-);
+)};
 
 
-const StaticCanvasPreview: React.FC<AuraScrollProps> = ({ sections, ui, width, height, style, ...rest }) => (
-    <div style={{ width: "100%", height: "100%", position: "relative", overflow: "hidden", ...style }} {...rest}>
+const StaticCanvasPreview: React.FC<AuraScrollProps> = ({ sections, ui, width, height, style, ...rest }) => {
+    const alignmentMap = {
+        left: "flex-start",
+        center: "center",
+        right: "flex-end",
+    };
+    const justification = alignmentMap[ui.headingAlignment || "center"];
+    
+    return (
+    <div style={{ width: "100%", height: "100%", position: "relative", overflow: "hidden", userSelect: ui.disableTextSelection ? 'none' : 'auto', ...style }} {...rest}>
         <div style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "black", color: "white", textTransform: "uppercase", width: "100%", height: "100%" }}>
             {ui.showLogo && <Header uiConfig={ui} />}
             {sections.length > 0 && 
                 <section style={{ position: "absolute", top: 0, left: 0, height: "100%", width: "100%", visibility: "visible" }}>
-                     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", position: "absolute", height: "100%", width: "100%", top: 0, backgroundSize: "cover", backgroundPosition: sections[0].backgroundPosition || 'center', backgroundImage: `linear-gradient(180deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.1) 100%), url("${sections[0].backgroundImage}")`}}>
-                        <h2 style={{ textAlign: "center", width: "90vw", maxWidth: "1200px", zIndex: 20, color: "white", ...ui.headingFont }}>
+                     <div style={{ display: "flex", alignItems: "center", justifyContent: justification, position: "absolute", height: "100%", width: "100%", top: 0, backgroundSize: "cover", backgroundPosition: sections[0].backgroundPosition || 'center', backgroundImage: `linear-gradient(180deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.1) 100%), url("${sections[0].backgroundImage}")`}}>
+                        <h2 style={{ textAlign: ui.headingAlignment || 'center', padding: '0 5%', width: "90vw", maxWidth: "1200px", zIndex: 20, color: "white", ...ui.headingFont }}>
                             {sections[0].title}
                         </h2>
                     </div>
@@ -312,7 +363,7 @@ const StaticCanvasPreview: React.FC<AuraScrollProps> = ({ sections, ui, width, h
             }
         </div>
     </div>
-);
+)};
 
 
 //================================================================
@@ -351,7 +402,7 @@ export default function AuraScroll(props: AuraScrollProps) {
     }
     
     return (
-        <div ref={mainRef} style={{ width: "100%", height: "100%", position: "relative", overflow: "hidden", ...style }} {...rest}>
+        <div ref={mainRef} style={{ width: "100%", height: "100%", position: "relative", overflow: "hidden", userSelect: ui.disableTextSelection ? 'none' : 'auto', ...style }} {...rest}>
             <style>{`
                 .clip-text { overflow: hidden; }
                 div, h2, span { will-change: transform; }
@@ -393,6 +444,7 @@ addPropertyControls(AuraScroll, {
                 title: { type: ControlType.String, defaultValue: "New Section" },
                 backgroundImage: { type: ControlType.Image },
                 backgroundPosition: { type: ControlType.String, defaultValue: "center" },
+                url: { type: ControlType.String, title: "URL", placeholder: "https://..." },
             },
         },
     },
@@ -415,6 +467,8 @@ addPropertyControls(AuraScroll, {
             showIndicator: { type: ControlType.Boolean, title: "Show Indicator", defaultValue: true },
             headerHeight: { type: ControlType.String, title: "Header Height", defaultValue: "7em", placeholder: "e.g., 7em or 100px" },
             indicatorBottom: { type: ControlType.String, title: "Indicator Bottom", defaultValue: "7em", placeholder: "e.g., 7em or 100px" },
+            headingAlignment: { type: ControlType.Enum, title: "Heading Align", options: ["left", "center", "right"], optionTitles: ["Left", "Center", "Right"], defaultValue: "center" },
+            disableTextSelection: { type: ControlType.Boolean, title: "Disable Select", defaultValue: true, description: "Prevents users from selecting text on the page." },
             logoFont: { type: ControlType.Font, title: "Logo Font", controls: "extended" },
             indicatorFont: { type: ControlType.Font, title: "Indicator Font", controls: "extended" },
             headingFont: { type: ControlType.Font, title: "Heading Font", controls: "extended" },
@@ -427,9 +481,9 @@ AuraScroll.defaultProps = {
     width: 800,
     height: 600,
     sections: [
-        { id: 1, title: 'Aura Scape', backgroundImage: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=2070&auto.format&fit=crop" },
-        { id: 2, title: 'Serene Waters', backgroundImage: "https://images.unsplash.com/photo-1501785888041-af3ef285b470?q=80&w=2070&auto.format&fit=crop" },
-        { id: 3, title: 'Mountain Pass', backgroundImage: "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?q=80&w=2070&auto.format&fit=crop" },
+        { id: 1, title: 'Aura Scape', backgroundImage: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=2070&auto.format&fit=crop", url: "https://unsplash.com/s/photos/landscape" },
+        { id: 2, title: 'Serene Waters', backgroundImage: "https://images.unsplash.com/photo-1501785888041-af3ef285b470?q=80&w=2070&auto.format&fit=crop", url: "https://unsplash.com/s/photos/sea" },
+        { id: 3, title: 'Mountain Pass', backgroundImage: "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?q=80&w=2070&auto.format&fit=crop", url: "https://unsplash.com/s/photos/mountain" },
     ],
     transitions: {
         duration: 1.25,
@@ -443,6 +497,8 @@ AuraScroll.defaultProps = {
         showIndicator: true,
         headerHeight: "7em",
         indicatorBottom: "7em",
+        headingAlignment: "center",
+        disableTextSelection: true,
         logoFont: { fontFamily: "'Inter', sans-serif", fontWeight: "600", fontSize: "1rem", letterSpacing: "0.5em" },
         indicatorFont: { fontFamily: "'Inter', sans-serif", fontSize: "1rem", letterSpacing: "0.2em" },
         headingFont: { fontFamily: "'Syne', sans-serif", fontWeight: "600", fontSize: "clamp(1rem, 8vw, 8rem)", textTransform: "none" },

@@ -2,6 +2,8 @@
 
 This is a visually stunning single-page application that uses the GSAP (GreenSock Animation Platform) library to create smooth, full-page scrolling transitions between sections.
 
+**[➡️ View Live Demo](https://top-screens-057770.framer.app/page-2)**
+
 ---
 
 ## What is this? (Explain Like I'm 5)
