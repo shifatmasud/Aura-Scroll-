@@ -1,9 +1,9 @@
 
-import React, { useRef, useState, useLayoutEffect, forwardRef, useImperativeHandle, useEffect } from 'react';
+import React, { useRef, useState, useLayoutEffect, forwardRef, useImperativeHandle, useEffect, useMemo } from 'react';
 import { addPropertyControls, ControlType } from 'framer';
 
 //================================================================
-// CONFIGURATION
+// CONFIGURATION (DEFAULTS)
 //================================================================
 export interface SectionData {
   id: number;
@@ -163,7 +163,8 @@ interface GsapAnimationRefs {
 const useGsapAnimations = (
   { mainRef, sectionRefs, imageRefs, headingRefs, outerWrapperRefs, innerWrapperRefs, pageIndicatorRef }: GsapAnimationRefs,
   sections: SectionData[],
-  setActiveIndex: React.Dispatch<React.SetStateAction<number>>
+  setActiveIndex: React.Dispatch<React.SetStateAction<number>>,
+  finalConfig: typeof config
 ) => {
   useLayoutEffect(() => {
     if (typeof gsap === 'undefined' || typeof Observer === 'undefined' || typeof SplitText === 'undefined') {
@@ -179,7 +180,7 @@ const useGsapAnimations = (
       const headingsDom = headingRefs.current.filter(Boolean) as HTMLHeadingElement[];
       const outerWrappersDom = outerWrapperRefs.current.filter(Boolean) as HTMLDivElement[];
       const innerWrappersDom = innerWrapperRefs.current.filter(Boolean) as HTMLDivElement[];
-      const animConfig = config.animation;
+      const animConfig = finalConfig.animation;
 
       let currentIndex = 0;
       setActiveIndex(0);
@@ -196,7 +197,7 @@ const useGsapAnimations = (
       gsap.set(imagesDom[0], { yPercent: 0 });
       gsap.set(splitHeadings[0].chars, { autoAlpha: 1 });
 
-      let digitHeight = config.ui.pageIndicatorDigitHeight;
+      let digitHeight = finalConfig.ui.pageIndicatorDigitHeight;
       if (pageIndicatorHandles.unitsRef.current?.firstElementChild) {
         digitHeight = (pageIndicatorHandles.unitsRef.current.firstElementChild as HTMLElement).offsetHeight;
       }
@@ -227,7 +228,7 @@ const useGsapAnimations = (
 
           if (currentIndex >= 0) {
               const currentSectionData = sections[currentIndex];
-              const blurAmount = currentSectionData.blurAmount ?? animConfig.imageBlurAmount;
+              const blurAmount = currentSectionData.blurAmount || animConfig.imageBlurAmount;
               gsap.set(sectionsDom[currentIndex], { zIndex: 0 });
               
               tl.to(splitHeadings[currentIndex].chars, {
@@ -244,7 +245,7 @@ const useGsapAnimations = (
           }
 
           const nextSectionData = sections[index];
-          const blurAmount = nextSectionData.blurAmount ?? animConfig.imageBlurAmount;
+          const blurAmount = nextSectionData.blurAmount || animConfig.imageBlurAmount;
           gsap.set(sectionsDom[index], { autoAlpha: 1, zIndex: 1 });
           
           tl.fromTo([outerWrappersDom[index], innerWrappersDom[index]], { 
@@ -284,34 +285,34 @@ const useGsapAnimations = (
     }, mainRef);
 
     return () => ctx.revert();
-  }, [sections, setActiveIndex, mainRef, sectionRefs, imageRefs, headingRefs, outerWrapperRefs, innerWrapperRefs, pageIndicatorRef]);
+  }, [sections, setActiveIndex, mainRef, sectionRefs, imageRefs, headingRefs, outerWrapperRefs, innerWrapperRefs, pageIndicatorRef, finalConfig]);
 };
 
 //================================================================
 // COMPONENTS
 //================================================================
-const Header: React.FC = () => (
+const Header: React.FC<{ uiConfig: typeof config.ui }> = ({ uiConfig }) => (
   <header 
     className="fixed top-0 left-0 flex items-center justify-between px-[5%] w-full z-30 text-[clamp(0.66rem,2vw,1rem)] tracking-[0.5em]"
-    style={{ height: config.ui.headerHeight }}
+    style={{ height: uiConfig.headerHeight }}
   >
     <div id="site-logo" className="text-white no-underline font-semibold">AS</div>
   </header>
 );
 
-const DigitStrip: React.FC<{ digitRef: React.RefObject<HTMLSpanElement> }> = ({ digitRef }) => (
+const DigitStrip: React.FC<{ digitRef: React.RefObject<HTMLSpanElement>, digitHeight: number }> = ({ digitRef, digitHeight }) => (
   <span ref={digitRef} className="inline-block">
     {[...Array(10)].map((_, i) => (
-      <span key={i} className="block leading-[20px]" style={{ height: `${config.ui.pageIndicatorDigitHeight}px`}}>{i}</span>
+      <span key={i} className="block leading-[20px]" style={{ height: `${digitHeight}px`}}>{i}</span>
     ))}
   </span>
 );
 
-const PageIndicator = forwardRef<PageIndicatorHandles, {}>((props, ref) => {
+const PageIndicator = forwardRef<PageIndicatorHandles, { uiConfig: typeof config.ui }>((props, ref) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const tensRef = useRef<HTMLSpanElement>(null);
   const unitsRef = useRef<HTMLSpanElement>(null);
-  const digitHeight = config.ui.pageIndicatorDigitHeight;
+  const { uiConfig } = props;
 
   useImperativeHandle(ref, () => ({ rootRef, tensRef, unitsRef }));
 
@@ -319,13 +320,13 @@ const PageIndicator = forwardRef<PageIndicatorHandles, {}>((props, ref) => {
     <div 
       id="page-indicator" ref={rootRef} 
       className="fixed right-[5%] z-30 text-[clamp(0.66rem,2vw,1rem)] tracking-[0.2em]"
-      style={{ bottom: config.ui.pageIndicatorBottom }}
+      style={{ bottom: uiConfig.pageIndicatorBottom }}
     >
-      <span style={{ height: `${digitHeight}px` }} className="inline-block overflow-hidden align-top">
-        <DigitStrip digitRef={tensRef} />
+      <span style={{ height: `${uiConfig.pageIndicatorDigitHeight}px` }} className="inline-block overflow-hidden align-top">
+        <DigitStrip digitRef={tensRef} digitHeight={uiConfig.pageIndicatorDigitHeight} />
       </span>
-      <span style={{ height: `${digitHeight}px` }} className="inline-block overflow-hidden align-top">
-        <DigitStrip digitRef={unitsRef} />
+      <span style={{ height: `${uiConfig.pageIndicatorDigitHeight}px` }} className="inline-block overflow-hidden align-top">
+        <DigitStrip digitRef={unitsRef} digitHeight={uiConfig.pageIndicatorDigitHeight} />
       </span>
     </div>
   );
@@ -390,10 +391,10 @@ const SectionList: React.FC<SectionListProps> = ({ sections, sectionRefs, imageR
 );
 
 interface ScrollingSectionsProps {
-  sections: SectionData[];
+  finalConfig: typeof config;
 }
 
-const ScrollingSections: React.FC<ScrollingSectionsProps> = ({ sections }) => {
+const ScrollingSections: React.FC<ScrollingSectionsProps> = ({ finalConfig }) => {
   const mainRef = useRef<HTMLDivElement>(null);
   const pageIndicatorRef = useRef<PageIndicatorHandles>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -404,20 +405,29 @@ const ScrollingSections: React.FC<ScrollingSectionsProps> = ({ sections }) => {
   const outerWrapperRefs = useRef<(HTMLDivElement | null)[]>([]);
   const innerWrapperRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  useGsapAnimations({ mainRef, sectionRefs, imageRefs, headingRefs, outerWrapperRefs, innerWrapperRefs, pageIndicatorRef }, sections, setActiveIndex);
+  useGsapAnimations({ mainRef, sectionRefs, imageRefs, headingRefs, outerWrapperRefs, innerWrapperRefs, pageIndicatorRef }, finalConfig.sections, setActiveIndex, finalConfig);
 
   return (
     <>
       <div ref={mainRef} className="h-full w-full">
         <SectionList
-          sections={sections}
+          sections={finalConfig.sections}
           sectionRefs={sectionRefs} imageRefs={imageRefs} headingRefs={headingRefs}
           outerWrapperRefs={outerWrapperRefs} innerWrapperRefs={innerWrapperRefs}
         />
       </div>
-      <PageIndicator ref={pageIndicatorRef} />
+      <PageIndicator ref={pageIndicatorRef} uiConfig={finalConfig.ui} />
     </>
   );
+};
+
+const App: React.FC<{ finalConfig: typeof config }> = ({ finalConfig }) => {
+    return (
+        <>
+            <Header uiConfig={finalConfig.ui} />
+            <ScrollingSections finalConfig={finalConfig} />
+        </>
+    );
 };
 
 //================================================================
@@ -425,29 +435,108 @@ const ScrollingSections: React.FC<ScrollingSectionsProps> = ({ sections }) => {
 //================================================================
 export default function AuraScroll(props) {
   const scriptsLoaded = useGsapScripts();
+  const { width, height, ...controlProps } = props;
+
+  const finalConfig = useMemo(() => {
+    const newConfig = JSON.parse(JSON.stringify(config)); // Deep clone defaults
+
+    // Override sections
+    if (controlProps.sections && controlProps.sections.length > 0) {
+        newConfig.sections = controlProps.sections.map((s, i) => ({
+            ...s,
+            id: i + 1, // Ensure unique ID for React key
+            className: `section-${i}`,
+        }));
+    }
+
+    // Override animation props from Framer controls
+    for (const key in newConfig.animation) {
+        if (controlProps.hasOwnProperty(key)) {
+            newConfig.animation[key] = controlProps[key];
+        }
+    }
+
+    // Override UI props from Framer controls
+    for (const key in newConfig.ui) {
+        if (controlProps.hasOwnProperty(key)) {
+            newConfig.ui[key] = controlProps[key];
+        }
+    }
+
+    return newConfig;
+  }, [controlProps]);
+
 
   if (!scriptsLoaded) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', backgroundColor: '#111', color: 'white', fontFamily: 'sans-serif' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%', backgroundColor: '#111', color: 'white', fontFamily: 'sans-serif' }}>
         Loading Animations...
       </div>
     );
   }
   
   return (
-    <div className="bg-black text-white uppercase h-full w-full overflow-hidden relative">
+    <div className="bg-black text-white uppercase h-full w-full overflow-hidden relative" style={{width, height}}>
         <GlobalStyles />
-        <Header />
-        <ScrollingSections sections={config.sections} />
+        <App finalConfig={finalConfig} />
     </div>
   );
 }
 
+const EASING_OPTIONS = ["power1.inOut", "power2.inOut", "power3.inOut", "power4.inOut", "expo.inOut", "circ.inOut", "sine.inOut", "back.inOut", "elastic.inOut", "bounce.inOut"];
+
 AuraScroll.defaultProps = {
     width: "100%",
     height: "100%",
+    ...config.animation,
+    ...config.ui,
+    sections: config.sections.map(({ id, className, ...rest }) => rest), // Match Framer's array prop format
 };
 
 addPropertyControls(AuraScroll, {
-  // Property controls can be added here for Framer UI
+  sections: {
+    type: ControlType.Array,
+    title: "Sections",
+    propertyControl: {
+      type: ControlType.Object,
+      controls: {
+        title: { type: ControlType.String, title: "Title", defaultValue: "New Section" },
+        backgroundImage: { type: ControlType.Image, title: "Background" },
+        backgroundPosition: { type: ControlType.String, title: "BG Position", defaultValue: "center" },
+        blurAmount: { type: ControlType.String, title: "Blur (e.g. 10px)", placeholder: "Default", defaultValue: "" },
+      },
+    },
+    defaultValue: AuraScroll.defaultProps.sections,
+  },
+  
+  globalAnimationSection: { type: 'section', title: "Global Animation" },
+  defaultDuration: { type: ControlType.Number, title: "Duration", defaultValue: config.animation.defaultDuration, min: 0.1, max: 5, step: 0.05 },
+  defaultEase: { type: ControlType.Enum, title: "Easing", options: EASING_OPTIONS, defaultValue: config.animation.defaultEase },
+
+  textAnimationSection: { type: 'section', title: "Text Animation" },
+  textIntroDuration: { type: ControlType.Number, title: "Intro Duration", defaultValue: config.animation.textIntroDuration, min: 0.1, max: 5, step: 0.05 },
+  textIntroEase: { type: ControlType.Enum, title: "Intro Easing", options: EASING_OPTIONS, defaultValue: config.animation.textIntroEase },
+  textIntroYPercent: { type: ControlType.Number, title: "Intro Y Offset (%)", defaultValue: config.animation.textIntroYPercent, min: 0, max: 300, step: 10 },
+  textOutroDuration: { type: ControlType.Number, title: "Outro Duration", defaultValue: config.animation.textOutroDuration, min: 0.1, max: 5, step: 0.05 },
+  textOutroEase: { type: ControlType.Enum, title: "Outro Easing", options: EASING_OPTIONS, defaultValue: config.animation.textOutroEase },
+  textOutroYPercent: { type: ControlType.Number, title: "Outro Y Offset (%)", defaultValue: config.animation.textOutroYPercent, min: -300, max: 0, step: -10 },
+  textStagger: { type: ControlType.Number, title: "Character Stagger (s)", defaultValue: config.animation.textStagger, min: 0, max: 0.2, step: 0.01 },
+
+  imageAnimationSection: { type: 'section', title: "Image Animation" },
+  imageIntroYPercent: { type: ControlType.Number, title: "Intro Y Offset (%)", defaultValue: config.animation.imageIntroYPercent, min: 0, max: 100, step: 5 },
+  imageOutroYPercent: { type: ControlType.Number, title: "Outro Y Offset (%)", defaultValue: config.animation.imageOutroYPercent, min: -100, max: 0, step: -5 },
+  imageBlurAmount: { type: ControlType.String, title: "Default Blur", defaultValue: config.animation.imageBlurAmount, placeholder: "5px" },
+  
+  indicatorAnimationSection: { type: 'section', title: "Indicator Animation" },
+  indicatorIntroDuration: { type: ControlType.Number, title: "Intro Duration", defaultValue: config.animation.indicatorIntroDuration, min: 0.1, max: 5, step: 0.05 },
+  indicatorIntroEase: { type: ControlType.Enum, title: "Intro Easing", options: EASING_OPTIONS, defaultValue: config.animation.indicatorIntroEase },
+  indicatorAnimDuration: { type: ControlType.Number, title: "Scroll Duration", defaultValue: config.animation.indicatorAnimDuration, min: 0.1, max: 5, step: 0.05 },
+  indicatorAnimEase: { type: ControlType.Enum, title: "Scroll Easing", options: EASING_OPTIONS, defaultValue: config.animation.indicatorAnimEase },
+
+  uiLayoutSection: { type: 'section', title: "UI Layout" },
+  headerHeight: { type: ControlType.String, title: "Header Height", defaultValue: config.ui.headerHeight },
+  pageIndicatorBottom: { type: ControlType.String, title: "Indicator Bottom", defaultValue: config.ui.pageIndicatorBottom },
+  
+  interactionSection: { type: 'section', title: "Interaction" },
+  scrollTolerance: { type: ControlType.Number, title: "Scroll Tolerance", defaultValue: config.animation.scrollTolerance, min: 1, max: 100, step: 1 },
 });
